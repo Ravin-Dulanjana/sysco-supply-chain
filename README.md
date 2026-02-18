@@ -32,7 +32,7 @@ Ensure you have the following installed on your Mac:
 ### 2. Infrastructure Setup (Docker)
 From the root directory, start the database and Kafka cluster:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 **Note:** The database is configured to run on port 5433 to avoid local conflicts.
@@ -73,27 +73,6 @@ You can also test the backend independently using `curl`:
 curl -X POST http://localhost:8080/api/orders \
   -H "Content-Type: application/json" \
   -d '{"itemName": "Fresh Salmon", "quantity": 10}'
-```
-
----
-
-## 🛡️ Git Commands
-To push your work to GitHub:
-
-```bash
-# 1. Initialize and add files
-git init
-git add .
-
-# 2. Commit
-git commit -m "feat: complete producer-consumer loop with Kafka and React UI"
-
-# 3. Create a branch and link to your GitHub repository
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/sysco-supply-chain.git
-
-# 4. Push
-git push -u origin main
 ```
 
 ---
