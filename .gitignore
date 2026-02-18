@@ -1,0 +1,22 @@
+# Java / Maven
+target/
+*.class
+.mvn/
+mvnw
+mvnw.cmd
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+.env*.local
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Docker
+.docker/
