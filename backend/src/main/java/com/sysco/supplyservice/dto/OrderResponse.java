@@ -3,9 +3,11 @@ package com.sysco.supplyservice.dto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 /**
  * DTO for outgoing order responses.
- * We choose which fields to expose to the client — never expose the raw entity.
+ * We choose which fields to expose — never return the raw entity.
  */
 @Data
 @AllArgsConstructor
@@ -15,4 +17,6 @@ public class OrderResponse {
     private String itemName;
     private Integer quantity;
     private String status;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

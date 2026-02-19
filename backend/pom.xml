@@ -5,25 +5,18 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.0.2</version>
+		<version>3.4.5</version>
 		<relativePath/>
 	</parent>
 	<groupId>com.sysco</groupId>
 	<artifactId>supply-service</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>supply-service</name>
-	<description>Demo project for Spring Boot</description>
-	<url/>
-	<licenses><license/></licenses>
-	<developers><developer/></developers>
-	<scm>
-		<connection/><developerConnection/><tag/><url/>
-	</scm>
+	<description>Micro Supply Chain Order Processing System — RESTful microservice with Kafka, PostgreSQL, Resilience4j</description>
 
 	<properties>
 		<java.version>21</java.version>
-		<!-- Resilience4j version compatible with Spring Boot 4 / Spring 7 -->
-		<resilience4j.version>2.3.0</resilience4j.version>
+		<resilience4j.version>2.2.0</resilience4j.version>
 	</properties>
 
 	<dependencies>
@@ -35,38 +28,46 @@
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-kafka</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-webmvc</artifactId>
+			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
 
-		<!-- ── NEW: Input Validation ── -->
+		<!-- ── Input Validation ── -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
 
-		<!-- ── NEW: Actuator (health, metrics, info endpoints) ── -->
+		<!-- ── Actuator (health, metrics, info endpoints) ── -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 
-		<!-- ── NEW: Resilience4j (retry, circuit breaker) ── -->
+		<!-- ── Kafka ── -->
+		<dependency>
+			<groupId>org.springframework.kafka</groupId>
+			<artifactId>spring-kafka</artifactId>
+		</dependency>
+
+		<!-- ── Resilience4j retry + AOP ── -->
 		<dependency>
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-spring-boot3</artifactId>
 			<version>${resilience4j.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-aop</artifactId>
+		</dependency>
 
-		<!-- ── DB & Lombok ── -->
+		<!-- ── DB ── -->
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
 		</dependency>
+
+		<!-- ── Lombok ── -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
@@ -82,6 +83,12 @@
 		<dependency>
 			<groupId>org.springframework.kafka</groupId>
 			<artifactId>spring-kafka-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- H2 in-memory DB — used only in tests, no real Postgres needed -->
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
 			<scope>test</scope>
 		</dependency>
 
@@ -105,7 +112,7 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 				<configuration>
-				<mainClass>com.sysco.supplyservice.SupplyServiceApplication</mainClass>
+					<mainClass>com.sysco.supplyservice.SupplyServiceApplication</mainClass>
 					<excludes>
 						<exclude>
 							<groupId>org.projectlombok</groupId>

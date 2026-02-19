@@ -12,28 +12,29 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Core business logic for order management.
  *
- * Key patterns used here:
- *  - SLF4J logger instead of System.out.println (goes to console + log file)
- *  - @Retry from Resilience4j: if Kafka publish fails, it retries up to 3 times
- *    before giving up (configured in application.yaml)
- *  - DTOs: accepts OrderRequest, returns OrderResponse (never exposes entity directly)
+ * Key enterprise patterns used:
+ *  - SLF4J structured logging (timestamped, level-filtered, written to file)
+ *  - @Retry (Resilience4j): Kafka publish retried up to 3x on failure
+ *  - DTOs: request/response separation from the JPA entity
+ *  - Status validation: only permitted transitions are allowed
  */
 @Service
 public class OrderService {
 
-    // SLF4J logger — outputs to console with timestamps and log levels
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
-
     private static final String ORDERS_TOPIC = "orders-topic";
+
+    // Valid statuses for validation
+    private static final Set<String> VALID_STATUSES = Set.of("PENDING", "PROCESSING", "SHIPPED", "CANCELLED");
 
     private final OrderRepository orderRepository;
     private final KafkaTemplate<String, String> kafkaTemplate;
 
-    // Constructor injection (preferred over @Autowired on fields)
     public OrderService(OrderRepository orderRepository, KafkaTemplate<String, String> kafkaTemplate) {
         this.orderRepository = orderRepository;
         this.kafkaTemplate = kafkaTemplate;
@@ -41,7 +42,7 @@ public class OrderService {
 
     // ── Create a new order ─────────────────────────────────────────────────
     public OrderResponse placeOrder(OrderRequest request) {
-        log.info("Placing new order for item '{}', quantity {}", request.getItemName(), request.getQuantity());
+        log.info("Placing new order: item='{}', quantity={}", request.getItemName(), request.getQuantity());
 
         SupplyOrder order = new SupplyOrder();
         order.setItemName(request.getItemName());
@@ -49,10 +50,9 @@ public class OrderService {
         order.setStatus("PENDING");
 
         SupplyOrder saved = orderRepository.save(order);
-        log.debug("Order saved to DB with id={}", saved.getId());
+        log.debug("Order persisted to DB: id={}", saved.getId());
 
         publishOrderEvent(saved);
-
         return toResponse(saved);
     }
 
@@ -65,60 +65,76 @@ public class OrderService {
                 .toList();
     }
 
+    // ── Get orders filtered by status ──────────────────────────────────────
+    public List<OrderResponse> getOrdersByStatus(String status) {
+        log.debug("Fetching orders with status='{}'", status);
+        return orderRepository.findByStatus(status.toUpperCase())
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
     // ── Get a single order by ID ───────────────────────────────────────────
     public OrderResponse getOrderById(Long id) {
         log.debug("Fetching order id={}", id);
-        SupplyOrder order = orderRepository.findById(id)
-                .orElseThrow(() -> new OrderNotFoundException(id));
-        return toResponse(order);
+        return toResponse(findOrderOrThrow(id));
     }
 
-    // ── Update the status of an order ─────────────────────────────────────
-    // e.g. PENDING → PROCESSING → SHIPPED
+    // ── Update the status of an order ──────────────────────────────────────
     public OrderResponse updateOrderStatus(Long id, String newStatus) {
-        log.info("Updating order id={} to status '{}'", id, newStatus);
+        String upperStatus = newStatus.toUpperCase();
+        if (!VALID_STATUSES.contains(upperStatus)) {
+            throw new IllegalArgumentException(
+                "Invalid status '" + newStatus + "'. Allowed: " + VALID_STATUSES);
+        }
 
-        SupplyOrder order = orderRepository.findById(id)
-                .orElseThrow(() -> new OrderNotFoundException(id));
-
+        SupplyOrder order = findOrderOrThrow(id);
         String oldStatus = order.getStatus();
-        order.setStatus(newStatus);
+        order.setStatus(upperStatus);
         SupplyOrder updated = orderRepository.save(order);
 
-        log.info("Order id={} status changed: {} → {}", id, oldStatus, newStatus);
-
-        // Notify Kafka about the status change
+        log.info("Order id={} status changed: {} → {}", id, oldStatus, upperStatus);
         publishStatusEvent(updated);
-
         return toResponse(updated);
     }
 
-    // ── Kafka publish with Resilience4j @Retry ────────────────────────────
-    // If Kafka is temporarily unavailable, this method will be retried
-    // up to 3 times (configured as "kafkaPublish" in application.yaml)
+    // ── Kafka publish with Resilience4j @Retry ─────────────────────────────
+    // Retried up to 3 times (500 ms wait) if Kafka is temporarily unavailable.
     @Retry(name = "kafkaPublish", fallbackMethod = "publishFallback")
     public void publishOrderEvent(SupplyOrder order) {
-        String message = "ORDER_PLACED: " + order.getItemName() + " (Qty: " + order.getQuantity() + ", Id: " + order.getId() + ")";
-        log.info("Publishing to Kafka topic '{}': {}", ORDERS_TOPIC, message);
+        String message = String.format("ORDER_PLACED id=%d item='%s' qty=%d",
+                order.getId(), order.getItemName(), order.getQuantity());
+        log.info("Publishing to Kafka [{}]: {}", ORDERS_TOPIC, message);
         kafkaTemplate.send(ORDERS_TOPIC, message);
     }
 
     @Retry(name = "kafkaPublish", fallbackMethod = "publishFallback")
     public void publishStatusEvent(SupplyOrder order) {
-        String message = "ORDER_STATUS_UPDATE: id=" + order.getId() + " status=" + order.getStatus();
-        log.info("Publishing to Kafka topic '{}': {}", ORDERS_TOPIC, message);
+        String message = String.format("ORDER_STATUS_UPDATE id=%d status=%s", order.getId(), order.getStatus());
+        log.info("Publishing to Kafka [{}]: {}", ORDERS_TOPIC, message);
         kafkaTemplate.send(ORDERS_TOPIC, message);
     }
 
-    // ── Fallback: called if all Kafka retries are exhausted ───────────────
-    // The app doesn't crash — it logs the failure and moves on.
+    // ── Fallback: all Kafka retries exhausted ─────────────────────────────
     public void publishFallback(SupplyOrder order, Exception ex) {
-        log.error("Kafka publish failed after all retries for order id={}. Error: {}", order.getId(), ex.getMessage());
-        // In production you might: save to a "dead letter" table, trigger an alert, etc.
+        log.error("Kafka publish FAILED after all retries — order id={}, error: {}", order.getId(), ex.getMessage());
+        // Production: write to dead-letter table, trigger PagerDuty alert, etc.
     }
 
-    // ── Helper: convert entity → response DTO ────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────
+    private SupplyOrder findOrderOrThrow(Long id) {
+        return orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(id));
+    }
+
     private OrderResponse toResponse(SupplyOrder order) {
-        return new OrderResponse(order.getId(), order.getItemName(), order.getQuantity(), order.getStatus());
+        return new OrderResponse(
+                order.getId(),
+                order.getItemName(),
+                order.getQuantity(),
+                order.getStatus(),
+                order.getCreatedAt(),
+                order.getUpdatedAt()
+        );
     }
 }

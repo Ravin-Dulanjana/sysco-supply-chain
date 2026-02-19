@@ -1,84 +1,131 @@
-# Sysco Supply Chain - Microservices Demo 📦
+# Micro Supply Chain Order Processing System
 
-A full-stack supply chain management system developed as a technical demonstration for the **Software Engineer (Backend)** role at Sysco LABS. This project implements a decoupled, event-driven architecture using **Spring Boot** and **Apache Kafka**.
+A RESTful microservice built with **Spring Boot 3 (Java 21)** for supply chain order management — demonstrating enterprise patterns including Kafka event streaming, Resilience4j retry, Spring Actuator health monitoring, and SLF4J structured logging.
 
-## 🚀 Key Features
-- **Event-Driven Architecture:** Decoupled Producer (Supply Service) and Consumer (Warehouse Notification).
-- **Data Persistence:** Relational data storage using PostgreSQL.
-- **Data Streaming:** Real-time message broadcasting via Kafka.
-- **Modern Frontend:** React-based dashboard for placing supply orders.
-- **Containerization:** Entire infrastructure (DB + Kafka) managed via Docker Compose.
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Runtime | Java 21 |
+| Framework | Spring Boot 3.4.5 |
+| Persistence | Spring Data JPA + PostgreSQL |
+| Messaging | Apache Kafka (producer + consumer) |
+| Resilience | Resilience4j Retry |
+| Observability | Spring Actuator + SLF4J structured logging |
+| Validation | Jakarta Bean Validation |
+| Testing | JUnit 5, Mockito, MockMvc, EmbeddedKafka, H2 |
+| Frontend | Next.js (TypeScript) |
+| Infra | Docker Compose |
 
 ---
 
-## 🛠️ Tech Stack
-- **Backend:** Java 21, Spring Boot 3.x, Spring Data JPA, Hibernate, Spring Kafka.
-- **Frontend:** Next.js 14 (App Router), React, Tailwind CSS.
-- **Database:** PostgreSQL 15.
-- **Messaging:** Apache Kafka + Zookeeper.
-- **Tools:** Docker, Maven, Lombok.
+## Architecture
 
----
-
-## ⚙️ Setup & Installation
-
-### 1. Prerequisites
-Ensure you have the following installed on your Mac:
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- [Java JDK 21+](https://openjdk.org/projects/jdk/21/)
-- [Node.js 18+](https://nodejs.org/)
-- [Maven](https://maven.apache.org/download.cgi)
-
-### 2. Infrastructure Setup (Docker)
-From the root directory, start the database and Kafka cluster:
-```bash
-docker compose up -d
+```
+Client
+  │
+  ▼
+OrderController  (REST API — /api/orders)
+  │
+  ▼
+OrderService     (business logic, @Retry Kafka publish)
+  │           │
+  ▼           ▼
+OrderRepository  KafkaTemplate ──► orders-topic ──► OrderConsumer
+(PostgreSQL)                                         (warehouse simulation)
 ```
 
-**Note:** The database is configured to run on port 5433 to avoid local conflicts.
+The service follows a single-service architecture with full event-driven messaging via Kafka, making it easy to extract into multiple microservices later.
 
-### 3. Backend Setup
-Navigate to the backend folder and run the Spring Boot application:
+---
+
+## Running Locally
+
+### Prerequisites
+- Java 21
+- Docker + Docker Compose
+
+### Start infrastructure
+```bash
+docker-compose up -d
+```
+This starts PostgreSQL (port 5433) and Kafka (port 9092).
+
+### Run the backend
 ```bash
 cd backend
-mvn spring-boot:run
+./mvnw spring-boot:run
 ```
+App starts on **http://localhost:8080**
 
-The server will start on http://localhost:8080.
-
-### 4. Frontend Setup
-Navigate to the frontend folder, install dependencies, and start the development server:
+### Run the frontend
 ```bash
 cd frontend
-npm install
-npm run dev
+npm install && npm run dev
 ```
-
-The UI will be available at http://localhost:3000.
-
----
-
-## 🏗️ Architectural Flow
-1. **User Action:** Chef places an order via the React UI.
-2. **REST API:** The UI calls the `POST /api/orders` endpoint on the Spring Boot backend.
-3. **Database:** The `OrderService` saves the order as `PENDING` in PostgreSQL.
-4. **Kafka Producer:** The service broadcasts an `ORDER_PLACED` event to the `orders-topic`.
-5. **Kafka Consumer:** An internal `WarehouseConsumer` listens to the topic and logs a shipment preparation notification.
+Frontend starts on **http://localhost:3000**
 
 ---
 
-## 🧪 Testing the API
-You can also test the backend independently using `curl`:
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/orders` | Place a new order |
+| `GET` | `/api/orders` | Get all orders |
+| `GET` | `/api/orders?status=PENDING` | Filter orders by status |
+| `GET` | `/api/orders/{id}` | Get a single order |
+| `PATCH` | `/api/orders/{id}/status` | Update order status |
+
+**Valid statuses:** `PENDING` → `PROCESSING` → `SHIPPED` / `CANCELLED`
+
+### Example: Create an order
 ```bash
 curl -X POST http://localhost:8080/api/orders \
   -H "Content-Type: application/json" \
-  -d '{"itemName": "Fresh Salmon", "quantity": 10}'
+  -d '{"itemName": "Widget A", "quantity": 10}'
+```
+
+### Example: Update status
+```bash
+curl -X PATCH http://localhost:8080/api/orders/1/status \
+  -H "Content-Type: application/json" \
+  -d '{"status": "SHIPPED"}'
 ```
 
 ---
 
-## 📝 License
-This project is a technical demonstration and is not licensed for commercial use.
+## Health & Observability (Spring Actuator)
 
-## 👤 Author
-Created as a portfolio project.
+| Endpoint | Description |
+|----------|-------------|
+| `GET /actuator/health` | Service health (DB + Kafka status) |
+| `GET /actuator/info` | App name, version, description |
+| `GET /actuator/metrics` | JVM + HTTP metrics |
+
+---
+
+## Resilience4j Retry
+
+Kafka publish operations are wrapped with `@Retry(name = "kafkaPublish")`:
+- **Max attempts:** 3
+- **Wait between retries:** 500 ms
+- **Retry on:** `TimeoutException`, `RuntimeException`
+- **Fallback:** logs the failure gracefully — the app never crashes
+
+---
+
+## Running Tests
+
+```bash
+cd backend
+./mvnw test
+```
+
+Tests use **H2 in-memory DB** + **EmbeddedKafka** — no real infrastructure needed.
+
+### Test coverage includes:
+- **Unit tests** (`OrderServiceTest`) — mocked repo + Kafka, 12 cases
+- **Web layer tests** (`OrderControllerTest`) — MockMvc, all endpoints + validation
+- **Repository tests** (`OrderRepositoryTest`) — `@DataJpaTest` slice with H2
+- **Integration tests** (`OrderIntegrationTest`) — full context, EmbeddedKafka, CRUD flow

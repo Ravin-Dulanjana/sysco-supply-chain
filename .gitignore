@@ -20,3 +20,7 @@ build/
 
 # Docker
 .docker/
+
+# Logs
+logs/
+*.log

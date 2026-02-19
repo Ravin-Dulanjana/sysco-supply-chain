@@ -3,7 +3,7 @@ server:
 
 spring:
   application:
-    name: supply-service
+    name: micro-supply-chain-order-service
 
   datasource:
     url: jdbc:postgresql://localhost:5433/supply_db
@@ -15,6 +15,9 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
 
   kafka:
     bootstrap-servers: localhost:9092
@@ -27,8 +30,8 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
-# ── Actuator ──────────────────────────────────────────────────────────────────
-# Exposes health, info, and metrics endpoints at /actuator/*
+# ── Spring Actuator ────────────────────────────────────────────────────────────
+# Exposes /actuator/health, /actuator/info, /actuator/metrics
 management:
   endpoints:
     web:
@@ -36,19 +39,19 @@ management:
         include: health, info, metrics
   endpoint:
     health:
-      show-details: always   # Shows DB + Kafka health details
+      show-details: always  # Shows DB + Kafka component health details
   info:
     env:
       enabled: true
 
 info:
   app:
-    name: Supply Service
+    name: Micro Supply Chain Order Processing System
     version: 1.0.0
-    description: Order processing service with Kafka messaging
+    description: RESTful microservice for supply chain order management with Kafka event streaming
 
 # ── Resilience4j ──────────────────────────────────────────────────────────────
-# Retry config for Kafka publish: tries up to 3 times with a 500ms wait between
+# Retry config for Kafka publish: up to 3 attempts, 500 ms between retries
 resilience4j:
   retry:
     instances:
@@ -59,13 +62,13 @@ resilience4j:
           - org.apache.kafka.common.errors.TimeoutException
           - java.lang.RuntimeException
 
-# ── Logging ───────────────────────────────────────────────────────────────────
+# ── SLF4J Structured Logging ──────────────────────────────────────────────────
 logging:
   level:
-    com.sysco.supplyservice: DEBUG         # Our app logs at DEBUG level
+    com.sysco.supplyservice: DEBUG
     org.springframework.kafka: INFO
-    org.hibernate.SQL: DEBUG               # Logs SQL queries
+    org.hibernate.SQL: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
   file:
-    name: logs/supply-service.log          # Also writes logs to a file
+    name: logs/supply-service.log

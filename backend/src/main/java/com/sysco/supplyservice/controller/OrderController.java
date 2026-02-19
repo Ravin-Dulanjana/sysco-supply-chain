@@ -11,15 +11,17 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
- * REST controller exposing the orders API.
+ * REST controller — exposes the supply orders API.
  *
  * Endpoints:
- *   POST   /api/orders              → Create a new order
- *   GET    /api/orders              → Get all orders
- *   GET    /api/orders/{id}         → Get one order by ID
- *   PATCH  /api/orders/{id}/status  → Update order status
+ *   POST   /api/orders                      → Place a new order (201)
+ *   GET    /api/orders                      → Get all orders
+ *   GET    /api/orders?status=PENDING       → Filter orders by status
+ *   GET    /api/orders/{id}                 → Get one order by ID
+ *   PATCH  /api/orders/{id}/status          → Update order status
  */
 @RestController
 @RequestMapping("/api/orders")
@@ -34,39 +36,41 @@ public class OrderController {
     }
 
     // ── POST /api/orders ───────────────────────────────────────────────────
-    // @Valid triggers the validation rules defined in OrderRequest (e.g. @NotBlank)
-    // Returns 201 Created on success
     @PostMapping
     public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody OrderRequest request) {
-        log.info("POST /api/orders - creating order for '{}'", request.getItemName());
-        OrderResponse response = orderService.placeOrder(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        log.info("POST /api/orders — item='{}'", request.getItemName());
+        return ResponseEntity.status(HttpStatus.CREATED).body(orderService.placeOrder(request));
     }
 
-    // ── GET /api/orders ────────────────────────────────────────────────────
+    // ── GET /api/orders[?status=PENDING] ──────────────────────────────────
     @GetMapping
-    public ResponseEntity<List<OrderResponse>> getAllOrders() {
-        log.info("GET /api/orders - fetching all orders");
+    public ResponseEntity<List<OrderResponse>> getOrders(
+            @RequestParam(required = false) String status) {
+
+        if (status != null && !status.isBlank()) {
+            log.info("GET /api/orders?status={}", status);
+            return ResponseEntity.ok(orderService.getOrdersByStatus(status));
+        }
+        log.info("GET /api/orders — all");
         return ResponseEntity.ok(orderService.getAllOrders());
     }
 
     // ── GET /api/orders/{id} ───────────────────────────────────────────────
     @GetMapping("/{id}")
     public ResponseEntity<OrderResponse> getOrderById(@PathVariable Long id) {
-        log.info("GET /api/orders/{} - fetching single order", id);
+        log.info("GET /api/orders/{}", id);
         return ResponseEntity.ok(orderService.getOrderById(id));
     }
 
     // ── PATCH /api/orders/{id}/status ──────────────────────────────────────
-    // Updates only the status field: PENDING → PROCESSING → SHIPPED
-    // Example body: { "status": "SHIPPED" }
+    // Body: { "status": "SHIPPED" }
     @PatchMapping("/{id}/status")
     public ResponseEntity<OrderResponse> updateStatus(
             @PathVariable Long id,
-            @RequestBody java.util.Map<String, String> body) {
+            @RequestBody Map<String, String> body) {
 
         String newStatus = body.get("status");
-        log.info("PATCH /api/orders/{}/status - new status: '{}'", id, newStatus);
+        log.info("PATCH /api/orders/{}/status — newStatus='{}'", id, newStatus);
         return ResponseEntity.ok(orderService.updateOrderStatus(id, newStatus));
     }
 }
