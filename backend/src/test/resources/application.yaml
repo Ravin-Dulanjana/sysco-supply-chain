@@ -1,4 +1,10 @@
 # Test configuration — H2 in-memory DB + EmbeddedKafka (no real infrastructure needed)
+app:
+  security:
+    enabled: false
+  jwt:
+    secret: this-is-a-very-long-dev-secret-key-for-hs256-auth-token-signing
+
 spring:
   application:
     name: supply-service-test

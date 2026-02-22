@@ -1,6 +1,4 @@
-# version: '3.8'
 services:
-  # The Database
   postgres-db:
     image: postgres:15
     environment:
@@ -9,10 +7,14 @@ services:
       POSTGRES_PASSWORD: password
     ports:
       - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d supply_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # The Message Broker (Kafka)
   zookeeper:
-    image: confluentinc/cp-zookeeper:latest
+    image: confluentinc/cp-zookeeper:7.4.0
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
 
@@ -25,7 +27,63 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "cub kafka-ready -b localhost:9092 1 20"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  auth-service:
+    build:
+      context: ./auth-service
+    environment:
+      SERVER_PORT: 8081
+      APP_JWT_SECRET: this-is-a-very-long-dev-secret-key-for-hs256-auth-token-signing
+      APP_DEMO_USER_USERNAME: admin
+      APP_DEMO_USER_PASSWORD: admin123
+
+  order-service:
+    build:
+      context: ./backend
+    environment:
+      SERVER_PORT: 8080
+      DB_HOST: postgres-db
+      DB_PORT: 5432
+      DB_NAME: supply_db
+      DB_USERNAME: admin
+      DB_PASSWORD: password
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      APP_JWT_SECRET: this-is-a-very-long-dev-secret-key-for-hs256-auth-token-signing
+      APP_SECURITY_ENABLED: "true"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  api-gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-service
+      - order-service
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      API_GATEWAY_URL: http://api-gateway:8082
+      NODE_ENV: production
+      PORT: 3000
+    depends_on:
+      - api-gateway
+    ports:
+      - "3000:3000"

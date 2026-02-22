@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL ?? "http://localhost:8080";
+const API_GATEWAY_URL = process.env.API_GATEWAY_URL ?? "http://localhost:8082";
 
 async function toClientResponse(response: Response): Promise<NextResponse> {
   const body = await response.text();
@@ -15,12 +15,16 @@ async function toClientResponse(response: Response): Promise<NextResponse> {
 export async function GET(request: NextRequest) {
   try {
     const status = request.nextUrl.searchParams.get("status");
-    const url = new URL("/api/orders", BACKEND_BASE_URL);
+    const url = new URL("/api/orders", API_GATEWAY_URL);
     if (status) {
       url.searchParams.set("status", status);
     }
 
-    const response = await fetch(url.toString(), { cache: "no-store" });
+    const authHeader = request.headers.get("authorization");
+    const response = await fetch(url.toString(), {
+      cache: "no-store",
+      headers: authHeader ? { Authorization: authHeader } : undefined,
+    });
     return await toClientResponse(response);
   } catch {
     return NextResponse.json(
@@ -33,9 +37,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const payload = await request.text();
-    const response = await fetch(`${BACKEND_BASE_URL}/api/orders`, {
+    const authHeader = request.headers.get("authorization");
+    const response = await fetch(`${API_GATEWAY_URL}/api/orders`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(authHeader ? { Authorization: authHeader } : {}),
+      },
       body: payload,
     });
 

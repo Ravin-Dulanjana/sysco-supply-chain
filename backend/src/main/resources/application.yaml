@@ -1,14 +1,20 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
+
+app:
+  security:
+    enabled: ${APP_SECURITY_ENABLED:true}
+  jwt:
+    secret: ${APP_JWT_SECRET:this-is-a-very-long-dev-secret-key-for-hs256-auth-token-signing}
 
 spring:
   application:
     name: micro-supply-chain-order-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5433/supply_db
-    username: admin
-    password: password
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:supply_db}
+    username: ${DB_USERNAME:admin}
+    password: ${DB_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -20,7 +26,7 @@ spring:
         format_sql: true
 
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer

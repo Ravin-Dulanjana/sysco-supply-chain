@@ -5,8 +5,10 @@ import com.sysco.supplyservice.dto.OrderRequest;
 import com.sysco.supplyservice.dto.OrderResponse;
 import com.sysco.supplyservice.exception.GlobalExceptionHandler;
 import com.sysco.supplyservice.exception.OrderNotFoundException;
+import com.sysco.supplyservice.security.JwtService;
 import com.sysco.supplyservice.service.OrderService;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -31,6 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * OrderService is mocked, so we test only the HTTP layer behaviour.
  */
 @WebMvcTest(OrderController.class)
+@AutoConfigureMockMvc(addFilters = false)
 @Import(GlobalExceptionHandler.class)
 class OrderControllerTest {
 
@@ -39,6 +42,9 @@ class OrderControllerTest {
 
     @MockitoBean
     private OrderService orderService;
+
+    @MockitoBean
+    private JwtService jwtService;
 
     @Autowired
     private ObjectMapper objectMapper;
