@@ -1,65 +1,257 @@
-import Image from "next/image";
+"use client";
+
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+
+type OrderStatus = "PENDING" | "PROCESSING" | "SHIPPED" | "CANCELLED";
+
+type SupplyOrder = {
+  id: number;
+  itemName: string;
+  quantity: number;
+  status: OrderStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const STATUSES: OrderStatus[] = ["PENDING", "PROCESSING", "SHIPPED", "CANCELLED"];
 
 export default function Home() {
+  const [itemName, setItemName] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [filterStatus, setFilterStatus] = useState<"ALL" | OrderStatus>("ALL");
+
+  const [orders, setOrders] = useState<SupplyOrder[]>([]);
+  const [draftStatuses, setDraftStatuses] = useState<Record<number, OrderStatus>>({});
+
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [updatingOrderId, setUpdatingOrderId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const hasOrders = useMemo(() => orders.length > 0, [orders]);
+
+  const loadOrders = useCallback(async (nextFilter: "ALL" | OrderStatus) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const query = nextFilter === "ALL" ? "" : `?status=${nextFilter}`;
+      const response = await fetch(`/api/orders${query}`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("Failed to load orders.");
+      }
+
+      const data: SupplyOrder[] = await response.json();
+      setOrders(data);
+      setDraftStatuses(Object.fromEntries(data.map((order) => [order.id, order.status])));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadOrders("ALL");
+  }, [loadOrders]);
+
+  async function handleCreateOrder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const parsedQuantity = Number(quantity);
+    if (!itemName.trim() || !Number.isInteger(parsedQuantity) || parsedQuantity < 1) {
+      setError("Provide a valid item name and a quantity of at least 1.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemName: itemName.trim(), quantity: parsedQuantity }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Could not create order.");
+      }
+
+      setItemName("");
+      setQuantity("1");
+      await loadOrders(filterStatus);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleUpdateStatus(orderId: number) {
+    const nextStatus = draftStatuses[orderId];
+    if (!nextStatus) return;
+
+    setUpdatingOrderId(orderId);
+    setError(null);
+    try {
+      const response = await fetch(`/api/orders/${orderId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Could not update order status.");
+      }
+
+      await loadOrders(filterStatus);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="min-h-screen bg-[#f6f7f5] px-5 py-8 md:px-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+        <section className="rounded-xl border border-[#d9ddd8] bg-white p-5">
+          <h1 className="text-xl font-semibold text-[#203328]">Supply Order Console</h1>
+          <p className="mt-1 text-sm text-[#607064]">
+            Basic UI for backend demo: create orders, filter, and update status.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+        </section>
+
+        <section className="rounded-xl border border-[#d9ddd8] bg-white p-5">
+          <h2 className="text-base font-semibold text-[#24362b]">Create Order</h2>
+          <form className="mt-4 grid gap-3 md:grid-cols-[1fr_150px_auto]" onSubmit={handleCreateOrder}>
+            <input
+              type="text"
+              value={itemName}
+              onChange={(event) => setItemName(event.target.value)}
+              placeholder="Item name"
+              className="h-10 rounded-md border border-[#cfd7d0] px-3 text-sm outline-none focus:border-[#6d8a74]"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            <input
+              type="number"
+              min={1}
+              value={quantity}
+              onChange={(event) => setQuantity(event.target.value)}
+              className="h-10 rounded-md border border-[#cfd7d0] px-3 text-sm outline-none focus:border-[#6d8a74]"
+            />
+            <button
+              type="submit"
+              disabled={submitting}
+              className="h-10 rounded-md bg-[#2f4a3a] px-4 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {submitting ? "Creating..." : "Create"}
+            </button>
+          </form>
+        </section>
+
+        <section className="rounded-xl border border-[#d9ddd8] bg-white p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <h2 className="text-base font-semibold text-[#24362b]">Orders</h2>
+            <div className="flex items-center gap-2">
+              <select
+                value={filterStatus}
+                onChange={(event) => {
+                  const nextFilter = event.target.value as "ALL" | OrderStatus;
+                  setFilterStatus(nextFilter);
+                  void loadOrders(nextFilter);
+                }}
+                className="h-9 rounded-md border border-[#cfd7d0] bg-white px-3 text-sm outline-none focus:border-[#6d8a74]"
+              >
+                <option value="ALL">All statuses</option>
+                {STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => void loadOrders(filterStatus)}
+                className="h-9 rounded-md border border-[#cfd7d0] bg-white px-3 text-sm text-[#314739]"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          {error && <p className="mt-3 text-sm text-[#b33f3f]">{error}</p>}
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[680px] border-collapse">
+              <thead>
+                <tr className="border-b border-[#e4e7e3] text-left text-xs uppercase tracking-wide text-[#75857a]">
+                  <th className="py-2 pr-3">ID</th>
+                  <th className="py-2 pr-3">Item</th>
+                  <th className="py-2 pr-3">Qty</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2 pr-3">Created</th>
+                  <th className="py-2 pr-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td className="py-4 text-sm text-[#708175]" colSpan={6}>
+                      Loading orders...
+                    </td>
+                  </tr>
+                ) : null}
+
+                {!loading && !hasOrders ? (
+                  <tr>
+                    <td className="py-4 text-sm text-[#708175]" colSpan={6}>
+                      No orders found.
+                    </td>
+                  </tr>
+                ) : null}
+
+                {!loading &&
+                  orders.map((order) => (
+                    <tr key={order.id} className="border-b border-[#eef1ed] text-sm text-[#2b3b31]">
+                      <td className="py-3 pr-3">#{order.id}</td>
+                      <td className="py-3 pr-3">{order.itemName}</td>
+                      <td className="py-3 pr-3">{order.quantity}</td>
+                      <td className="py-3 pr-3">{order.status}</td>
+                      <td className="py-3 pr-3">{new Date(order.createdAt).toLocaleString()}</td>
+                      <td className="py-3 pr-3">
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={draftStatuses[order.id] ?? order.status}
+                            onChange={(event) =>
+                              setDraftStatuses((current) => ({
+                                ...current,
+                                [order.id]: event.target.value as OrderStatus,
+                              }))
+                            }
+                            className="h-8 rounded-md border border-[#cfd7d0] bg-white px-2 text-xs outline-none focus:border-[#6d8a74]"
+                          >
+                            {STATUSES.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => void handleUpdateStatus(order.id)}
+                            disabled={updatingOrderId === order.id}
+                            className="h-8 rounded-md bg-[#385a46] px-3 text-xs font-medium text-white disabled:opacity-60"
+                          >
+                            {updatingOrderId === order.id ? "Saving..." : "Save"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
   );
 }
