@@ -8,7 +8,7 @@ import com.sysco.supplyservice.repository.OrderRepository;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.KafkaOperations;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -33,9 +33,9 @@ public class OrderService {
     private static final Set<String> VALID_STATUSES = Set.of("PENDING", "PROCESSING", "SHIPPED", "CANCELLED");
 
     private final OrderRepository orderRepository;
-    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final KafkaOperations<String, String> kafkaTemplate;
 
-    public OrderService(OrderRepository orderRepository, KafkaTemplate<String, String> kafkaTemplate) {
+    public OrderService(OrderRepository orderRepository, KafkaOperations<String, String> kafkaTemplate) {
         this.orderRepository = orderRepository;
         this.kafkaTemplate = kafkaTemplate;
     }

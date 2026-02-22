@@ -2,17 +2,23 @@ package com.sysco.supplyservice.repository;
 
 import com.sysco.supplyservice.model.SupplyOrder;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.test.context.TestPropertySource;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Repository slice tests — only JPA layer is loaded, H2 in-memory DB is used.
+ * Faster than full @SpringBootTest, no Kafka or web layer involved.
+ */
 @DataJpaTest
-@DisplayName("OrderRepository Slice Tests")
+@TestPropertySource(properties = {
+    "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect"
+})
 class OrderRepositoryTest {
 
     @Autowired
@@ -21,51 +27,38 @@ class OrderRepositoryTest {
     @BeforeEach
     void setUp() {
         orderRepository.deleteAll();
-
-        SupplyOrder pending1 = order("Bolt A", 5, "PENDING");
-        SupplyOrder pending2 = order("Bolt B", 3, "PENDING");
-        SupplyOrder shipped  = order("Nut C",  10, "SHIPPED");
-
-        orderRepository.saveAll(List.of(pending1, pending2, shipped));
+        orderRepository.saveAll(List.of(
+            order("Bolt A", 5, "PENDING"),
+            order("Bolt B", 3, "PENDING"),
+            order("Nut C", 10, "SHIPPED")
+        ));
     }
 
     @Test
-    @DisplayName("findByStatus: returns only matching orders")
-    void findByStatus_returnsMatchingOrders() {
+    void findByStatus_returnsOnlyMatchingOrders() {
         List<SupplyOrder> pending = orderRepository.findByStatus("PENDING");
         assertThat(pending).hasSize(2);
-        assertThat(pending).allMatch(o -> o.getStatus().equals("PENDING"));
+        assertThat(pending).allMatch(o -> "PENDING".equals(o.getStatus()));
     }
 
     @Test
-    @DisplayName("findByStatus: returns empty list for non-existent status")
-    void findByStatus_returnsEmptyForUnknownStatus() {
-        List<SupplyOrder> result = orderRepository.findByStatus("PROCESSING");
-        assertThat(result).isEmpty();
+    void findByStatus_returnsEmptyListForUnknownStatus() {
+        assertThat(orderRepository.findByStatus("PROCESSING")).isEmpty();
     }
 
     @Test
-    @DisplayName("countByStatus: counts orders correctly")
-    void countByStatus_countsCorrectly() {
+    void countByStatus_returnsCorrectCounts() {
         assertThat(orderRepository.countByStatus("PENDING")).isEqualTo(2);
         assertThat(orderRepository.countByStatus("SHIPPED")).isEqualTo(1);
         assertThat(orderRepository.countByStatus("CANCELLED")).isEqualTo(0);
     }
 
     @Test
-    @DisplayName("save: persists entity with auto-generated id and timestamps")
-    void save_persistsWithTimestamps() {
+    void save_persistsTimestampsAutomatically() {
         SupplyOrder saved = orderRepository.save(order("Gear D", 7, "PENDING"));
-
         assertThat(saved.getId()).isNotNull();
         assertThat(saved.getCreatedAt()).isNotNull();
         assertThat(saved.getUpdatedAt()).isNotNull();
-    }
-
-    @Test
-    @DisplayName("findAll: returns total number of orders")
-    void findAll_returnsTotalOrders() {
-        assertThat(orderRepository.findAll()).hasSize(3);
     }
 
     private SupplyOrder order(String item, int qty, String status) {

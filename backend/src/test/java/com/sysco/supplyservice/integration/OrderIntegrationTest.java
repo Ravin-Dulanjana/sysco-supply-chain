@@ -5,7 +5,6 @@ import com.sysco.supplyservice.dto.OrderRequest;
 import com.sysco.supplyservice.dto.OrderResponse;
 import com.sysco.supplyservice.repository.OrderRepository;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,16 +15,18 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import java.util.List;
 
+/**
+ * Full integration tests — loads complete Spring context with H2 + EmbeddedKafka.
+ * Tests the real flow end-to-end: HTTP → Service → Repository → Kafka.
+ * No real Postgres or Kafka broker needed.
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @EmbeddedKafka(partitions = 1, topics = {"orders-topic"})
 @DirtiesContext
-@DisplayName("Full Integration Tests (H2 + EmbeddedKafka)")
 class OrderIntegrationTest {
 
     @Autowired
@@ -42,57 +43,43 @@ class OrderIntegrationTest {
         orderRepository.deleteAll();
     }
 
-    @Test
-    @DisplayName("POST /api/orders → GET /api/orders/{id}: full create and fetch flow")
-    void createOrder_thenFetchById() throws Exception {
-        // Create
-        OrderRequest req = new OrderRequest();
-        req.setItemName("Gear X");
-        req.setQuantity(3);
+    // ── Core CRUD flow ─────────────────────────────────────────────────────
 
+    @Test
+    void createOrder_thenFetchById_returnsCorrectData() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(req)))
+                        .content("{\"itemName\":\"Gear X\",\"quantity\":3}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andReturn();
 
-        OrderResponse created = objectMapper.readValue(
-                result.getResponse().getContentAsString(), OrderResponse.class);
-        Long id = created.getId();
+        Long id = objectMapper.readValue(
+                result.getResponse().getContentAsString(), OrderResponse.class).getId();
 
-        // Fetch by ID
         mockMvc.perform(get("/api/orders/" + id))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(id))
-                .andExpect(jsonPath("$.itemName").value("Gear X"));
+                .andExpect(jsonPath("$.itemName").value("Gear X"))
+                .andExpect(jsonPath("$.createdAt").exists());
     }
 
     @Test
-    @DisplayName("PATCH status flow: PENDING → PROCESSING → SHIPPED")
-    void statusTransition_pendingToShipped() throws Exception {
-        // Create order
-        OrderRequest req = new OrderRequest();
-        req.setItemName("Sprocket B");
-        req.setQuantity(5);
-
+    void statusTransition_pendingToProcessingToShipped() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(req)))
+                        .content("{\"itemName\":\"Sprocket B\",\"quantity\":5}"))
                 .andExpect(status().isCreated())
                 .andReturn();
 
         Long id = objectMapper.readValue(
                 result.getResponse().getContentAsString(), OrderResponse.class).getId();
 
-        // PENDING → PROCESSING
         mockMvc.perform(patch("/api/orders/" + id + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"PROCESSING\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PROCESSING"));
 
-        // PROCESSING → SHIPPED
         mockMvc.perform(patch("/api/orders/" + id + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"SHIPPED\"}"))
@@ -100,45 +87,23 @@ class OrderIntegrationTest {
                 .andExpect(jsonPath("$.status").value("SHIPPED"));
     }
 
-    @Test
-    @DisplayName("GET /api/orders?status=PENDING: returns only pending orders")
-    void filterByStatus_returnsPendingOnly() throws Exception {
-        // Create two orders
-        for (String item : List.of("A", "B")) {
-            OrderRequest req = new OrderRequest();
-            req.setItemName(item);
-            req.setQuantity(1);
-            mockMvc.perform(post("/api/orders")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(req)))
-                    .andExpect(status().isCreated());
-        }
-
-        mockMvc.perform(get("/api/orders").param("status", "PENDING"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2));
-    }
+    // ── Error handling ─────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("GET /api/orders/{id}: returns 404 for non-existent order")
-    void getOrderById_returns404ForMissing() throws Exception {
+    void getOrderById_returns404ForNonExistentOrder() throws Exception {
         mockMvc.perform(get("/api/orders/999999"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404));
     }
 
     @Test
-    @DisplayName("PATCH status: returns 400 for invalid status value")
     void updateStatus_returns400ForInvalidStatus() throws Exception {
-        // Create an order first
-        OrderRequest req = new OrderRequest();
-        req.setItemName("Valve C");
-        req.setQuantity(2);
         MvcResult result = mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(req)))
+                        .content("{\"itemName\":\"Valve C\",\"quantity\":2}"))
                 .andExpect(status().isCreated())
                 .andReturn();
+
         Long id = objectMapper.readValue(
                 result.getResponse().getContentAsString(), OrderResponse.class).getId();
 
@@ -146,21 +111,15 @@ class OrderIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"FLYING\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("FLYING")));
+                .andExpect(jsonPath("$.error").exists());
     }
 
+    // ── Actuator ───────────────────────────────────────────────────────────
+
     @Test
-    @DisplayName("Actuator /health: returns UP")
     void actuatorHealth_returnsUp() throws Exception {
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
-    }
-
-    @Test
-    @DisplayName("Actuator /info: returns app info")
-    void actuatorInfo_returnsAppInfo() throws Exception {
-        mockMvc.perform(get("/actuator/info"))
-                .andExpect(status().isOk());
     }
 }

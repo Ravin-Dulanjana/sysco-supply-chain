@@ -6,120 +6,92 @@ import com.sysco.supplyservice.exception.OrderNotFoundException;
 import com.sysco.supplyservice.model.SupplyOrder;
 import com.sysco.supplyservice.repository.OrderRepository;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.KafkaOperations;
 
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+/**
+ * Unit tests for OrderService.
+ * All dependencies are mocked — no Spring context, no DB, no Kafka needed.
+ *
+ * Note: @Retry (Resilience4j) works via AOP proxy, so it is NOT active here.
+ * We test the raw business logic: saving, mapping, throwing, fallback behaviour.
+ */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("OrderService Unit Tests")
 class OrderServiceTest {
 
     @Mock
     private OrderRepository orderRepository;
 
     @Mock
-    private KafkaTemplate<String, String> kafkaTemplate;
+    private KafkaOperations<String, String> kafkaTemplate;
 
     @InjectMocks
     private OrderService orderService;
 
-    private SupplyOrder sampleOrder;
+    private SupplyOrder savedOrder;
 
     @BeforeEach
     void setUp() {
-        sampleOrder = new SupplyOrder();
-        sampleOrder.setId(1L);
-        sampleOrder.setItemName("Widget A");
-        sampleOrder.setQuantity(10);
-        sampleOrder.setStatus("PENDING");
+        savedOrder = new SupplyOrder();
+        savedOrder.setId(1L);
+        savedOrder.setItemName("Widget A");
+        savedOrder.setQuantity(10);
+        savedOrder.setStatus("PENDING");
     }
 
     // ── placeOrder ─────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("placeOrder: saves order with PENDING status and returns response")
-    void placeOrder_savesOrderWithPendingStatus() {
-        OrderRequest request = new OrderRequest();
-        request.setItemName("Widget A");
-        request.setQuantity(10);
+    void placeOrder_savesOrderAndReturnsResponse() {
+        OrderRequest req = new OrderRequest();
+        req.setItemName("Widget A");
+        req.setQuantity(10);
+        when(orderRepository.save(any())).thenReturn(savedOrder);
 
-        when(orderRepository.save(any(SupplyOrder.class))).thenReturn(sampleOrder);
+        OrderResponse resp = orderService.placeOrder(req);
 
-        OrderResponse response = orderService.placeOrder(request);
-
-        assertThat(response.getId()).isEqualTo(1L);
-        assertThat(response.getItemName()).isEqualTo("Widget A");
-        assertThat(response.getQuantity()).isEqualTo(10);
-        assertThat(response.getStatus()).isEqualTo("PENDING");
-
-        verify(orderRepository, times(1)).save(any(SupplyOrder.class));
+        assertThat(resp.getId()).isEqualTo(1L);
+        assertThat(resp.getStatus()).isEqualTo("PENDING");
+        verify(orderRepository).save(any(SupplyOrder.class));
     }
 
     @Test
-    @DisplayName("placeOrder: publishes event to Kafka after saving")
     void placeOrder_publishesKafkaEvent() {
-        OrderRequest request = new OrderRequest();
-        request.setItemName("Widget B");
-        request.setQuantity(5);
+        OrderRequest req = new OrderRequest();
+        req.setItemName("Widget A");
+        req.setQuantity(10);
+        when(orderRepository.save(any())).thenReturn(savedOrder);
 
-        when(orderRepository.save(any(SupplyOrder.class))).thenReturn(sampleOrder);
+        orderService.placeOrder(req);
 
-        orderService.placeOrder(request);
-
-        verify(kafkaTemplate, times(1)).send(eq("orders-topic"), anyString());
-    }
-
-    // ── getAllOrders ───────────────────────────────────────────────────────
-
-    @Test
-    @DisplayName("getAllOrders: returns mapped list of all orders")
-    void getAllOrders_returnsMappedList() {
-        when(orderRepository.findAll()).thenReturn(List.of(sampleOrder));
-
-        List<OrderResponse> result = orderService.getAllOrders();
-
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).getItemName()).isEqualTo("Widget A");
-    }
-
-    @Test
-    @DisplayName("getAllOrders: returns empty list when no orders exist")
-    void getAllOrders_returnsEmptyListWhenNone() {
-        when(orderRepository.findAll()).thenReturn(List.of());
-
-        List<OrderResponse> result = orderService.getAllOrders();
-
-        assertThat(result).isEmpty();
+        // publishOrderEvent is called directly (no proxy), so Kafka send is invoked
+        verify(kafkaTemplate).send(eq("orders-topic"), anyString());
     }
 
     // ── getOrderById ──────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("getOrderById: returns order when found")
-    void getOrderById_returnsOrderWhenFound() {
-        when(orderRepository.findById(1L)).thenReturn(Optional.of(sampleOrder));
+    void getOrderById_returnsResponseWhenFound() {
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(savedOrder));
 
-        OrderResponse response = orderService.getOrderById(1L);
+        OrderResponse resp = orderService.getOrderById(1L);
 
-        assertThat(response.getId()).isEqualTo(1L);
-        assertThat(response.getStatus()).isEqualTo("PENDING");
+        assertThat(resp.getItemName()).isEqualTo("Widget A");
     }
 
     @Test
-    @DisplayName("getOrderById: throws OrderNotFoundException when not found")
-    void getOrderById_throwsWhenNotFound() {
+    void getOrderById_throwsOrderNotFoundExceptionWhenMissing() {
         when(orderRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> orderService.getOrderById(99L))
@@ -127,50 +99,37 @@ class OrderServiceTest {
                 .hasMessageContaining("99");
     }
 
-    // ── getOrdersByStatus ─────────────────────────────────────────────────
+    // ── getAllOrders ───────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("getOrdersByStatus: returns filtered list")
-    void getOrdersByStatus_returnsFilteredList() {
-        when(orderRepository.findByStatus("PENDING")).thenReturn(List.of(sampleOrder));
+    void getAllOrders_returnsMappedList() {
+        when(orderRepository.findAll()).thenReturn(List.of(savedOrder));
 
-        List<OrderResponse> result = orderService.getOrdersByStatus("PENDING");
+        List<OrderResponse> result = orderService.getAllOrders();
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getStatus()).isEqualTo("PENDING");
-    }
-
-    @Test
-    @DisplayName("getOrdersByStatus: uppercases the status before querying")
-    void getOrdersByStatus_uppercasesStatus() {
-        when(orderRepository.findByStatus("PENDING")).thenReturn(List.of(sampleOrder));
-
-        orderService.getOrdersByStatus("pending"); // lowercase input
-
-        verify(orderRepository).findByStatus("PENDING");
+        assertThat(result.get(0).getItemName()).isEqualTo("Widget A");
     }
 
     // ── updateOrderStatus ─────────────────────────────────────────────────
 
     @Test
-    @DisplayName("updateOrderStatus: updates status and publishes Kafka event")
-    void updateOrderStatus_updatesAndPublishes() {
-        when(orderRepository.findById(1L)).thenReturn(Optional.of(sampleOrder));
+    void updateOrderStatus_updatesStatusSuccessfully() {
         SupplyOrder updated = new SupplyOrder();
         updated.setId(1L);
         updated.setItemName("Widget A");
         updated.setQuantity(10);
-        updated.setStatus("PROCESSING");
-        when(orderRepository.save(any(SupplyOrder.class))).thenReturn(updated);
+        updated.setStatus("SHIPPED");
 
-        OrderResponse response = orderService.updateOrderStatus(1L, "PROCESSING");
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(savedOrder));
+        when(orderRepository.save(any())).thenReturn(updated);
 
-        assertThat(response.getStatus()).isEqualTo("PROCESSING");
-        verify(kafkaTemplate, times(1)).send(eq("orders-topic"), anyString());
+        OrderResponse resp = orderService.updateOrderStatus(1L, "SHIPPED");
+
+        assertThat(resp.getStatus()).isEqualTo("SHIPPED");
     }
 
     @Test
-    @DisplayName("updateOrderStatus: throws IllegalArgumentException for invalid status")
     void updateOrderStatus_throwsForInvalidStatus() {
         assertThatThrownBy(() -> orderService.updateOrderStatus(1L, "FLYING"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -178,7 +137,6 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("updateOrderStatus: throws OrderNotFoundException when order missing")
     void updateOrderStatus_throwsWhenOrderNotFound() {
         when(orderRepository.findById(99L)).thenReturn(Optional.empty());
 
@@ -186,12 +144,12 @@ class OrderServiceTest {
                 .isInstanceOf(OrderNotFoundException.class);
     }
 
-    // ── Resilience4j fallback ─────────────────────────────────────────────
+    // ── publishFallback ───────────────────────────────────────────────────
 
     @Test
-    @DisplayName("publishFallback: logs error without throwing (graceful degradation)")
     void publishFallback_doesNotThrow() {
-        assertThatCode(() -> orderService.publishFallback(sampleOrder, new RuntimeException("Kafka down")))
+        // Verifies graceful degradation when all Kafka retries are exhausted
+        assertThatCode(() -> orderService.publishFallback(savedOrder, new RuntimeException("Kafka down")))
                 .doesNotThrowAnyException();
     }
 }

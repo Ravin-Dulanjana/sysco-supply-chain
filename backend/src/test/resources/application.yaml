@@ -1,7 +1,7 @@
-# Test configuration — uses H2 in-memory DB and EmbeddedKafka (no real infra needed)
+# Test configuration — H2 in-memory DB + EmbeddedKafka (no real infrastructure needed)
 spring:
   application:
-    name: micro-supply-chain-order-service-test
+    name: supply-service-test
 
   datasource:
     url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
@@ -12,8 +12,10 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
-    show-sql: true
-    database-platform: org.hibernate.dialect.H2Dialect
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
 
   kafka:
     bootstrap-servers: ${spring.embedded.kafka.brokers}
@@ -31,6 +33,14 @@ management:
     web:
       exposure:
         include: health, info, metrics
+  endpoint:
+    health:
+      show-details: always
+
+info:
+  app:
+    name: Micro Supply Chain Order Processing System
+    version: 1.0.0
 
 resilience4j:
   retry:
@@ -41,5 +51,6 @@ resilience4j:
 
 logging:
   level:
-    com.sysco.supplyservice: DEBUG
+    com.sysco.supplyservice: INFO
     org.springframework.kafka: WARN
+    org.hibernate: WARN

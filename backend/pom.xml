@@ -17,6 +17,9 @@
 	<properties>
 		<java.version>21</java.version>
 		<resilience4j.version>2.2.0</resilience4j.version>
+		<!-- Override Mockito + ByteBuddy to support Java 25 (Homebrew ships Java 25) -->
+		<mockito.version>5.18.0</mockito.version>
+		<bytebuddy.version>1.17.5</bytebuddy.version>
 	</properties>
 
 	<dependencies>
@@ -37,7 +40,7 @@
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
 
-		<!-- ── Actuator (health, metrics, info endpoints) ── -->
+		<!-- ── Actuator ── -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
@@ -85,7 +88,7 @@
 			<artifactId>spring-kafka-test</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<!-- H2 in-memory DB — used only in tests, no real Postgres needed -->
+		<!-- H2 in-memory DB for tests — no real Postgres needed -->
 		<dependency>
 			<groupId>com.h2database</groupId>
 			<artifactId>h2</artifactId>
@@ -93,6 +96,27 @@
 		</dependency>
 
 	</dependencies>
+
+	<!-- Force the updated ByteBuddy across all transitive dependencies -->
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>net.bytebuddy</groupId>
+				<artifactId>byte-buddy</artifactId>
+				<version>${bytebuddy.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>net.bytebuddy</groupId>
+				<artifactId>byte-buddy-agent</artifactId>
+				<version>${bytebuddy.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.mockito</groupId>
+				<artifactId>mockito-core</artifactId>
+				<version>${mockito.version}</version>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 
 	<build>
 		<plugins>
@@ -108,6 +132,23 @@
 					</annotationProcessorPaths>
 				</configuration>
 			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!--
+						Load Mockito as an explicit JVM agent.
+						Required on Java 21+ because dynamic agent self-attachment is
+						being phased out by the JVM. Without this, Mockito warns and will
+						eventually break on newer JDK releases.
+					-->
+					<argLine>-Dnet.bytebuddy.experimental=true 
+						-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar
+					</argLine>
+				</configuration>
+			</plugin>
+
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
