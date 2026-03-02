@@ -17,6 +17,9 @@ public class OrderResponse {
     private String itemName;
     private Integer quantity;
     private String status;
+    private String sagaId;
+    private String sagaState;
+    private String failureReason;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

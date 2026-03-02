@@ -9,7 +9,7 @@ import org.springframework.test.annotation.DirtiesContext;
  * Smoke test — verifies the full Spring application context starts without errors.
  */
 @SpringBootTest
-@EmbeddedKafka(partitions = 1, topics = {"orders-topic"})
+@EmbeddedKafka(partitions = 1, topics = {"orders-topic", "order-saga-topic"})
 @DirtiesContext
 class SupplyServiceApplicationTests {
 

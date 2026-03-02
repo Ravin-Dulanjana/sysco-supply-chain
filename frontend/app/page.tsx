@@ -3,12 +3,22 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type OrderStatus = "PENDING" | "PROCESSING" | "SHIPPED" | "CANCELLED";
+type SagaState =
+  | "STARTED"
+  | "INVENTORY_RESERVED"
+  | "COMPLETED"
+  | "COMPENSATING"
+  | "COMPENSATED"
+  | "FAILED";
 
 type SupplyOrder = {
   id: number;
   itemName: string;
   quantity: number;
   status: OrderStatus;
+  sagaId: string | null;
+  sagaState: SagaState | null;
+  failureReason: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -74,6 +84,16 @@ export default function Home() {
       void loadOrders("ALL", savedToken);
     }
   }, [loadOrders]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const intervalId = window.setInterval(() => {
+      void loadOrders(filterStatus, token);
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [filterStatus, loadOrders, token]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -238,6 +258,10 @@ export default function Home() {
           <>
             <section className="rounded-xl border border-[#d9ddd8] bg-white p-5">
               <h2 className="text-base font-semibold text-[#24362b]">Create Order</h2>
+              <p className="mt-1 text-sm text-[#607064]">
+                Saga demo: use quantity above 100 to trigger inventory failure, or include{" "}
+                <span className="font-medium text-[#314739]">FAIL_PAYMENT</span> in the item name to trigger compensation.
+              </p>
               <form className="mt-4 grid gap-3 md:grid-cols-[1fr_150px_auto]" onSubmit={handleCreateOrder}>
                 <input
                   type="text"
@@ -296,13 +320,15 @@ export default function Home() {
               {error && <p className="mt-3 text-sm text-[#b33f3f]">{error}</p>}
 
               <div className="mt-4 overflow-x-auto">
-                <table className="w-full min-w-[680px] border-collapse">
+                <table className="w-full min-w-[920px] border-collapse">
                   <thead>
                     <tr className="border-b border-[#e4e7e3] text-left text-xs uppercase tracking-wide text-[#75857a]">
                       <th className="py-2 pr-3">ID</th>
                       <th className="py-2 pr-3">Item</th>
                       <th className="py-2 pr-3">Qty</th>
                       <th className="py-2 pr-3">Status</th>
+                      <th className="py-2 pr-3">Saga</th>
+                      <th className="py-2 pr-3">Failure</th>
                       <th className="py-2 pr-3">Created</th>
                       <th className="py-2 pr-3">Actions</th>
                     </tr>
@@ -310,7 +336,7 @@ export default function Home() {
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td className="py-4 text-sm text-[#708175]" colSpan={6}>
+                        <td className="py-4 text-sm text-[#708175]" colSpan={8}>
                           Loading orders...
                         </td>
                       </tr>
@@ -318,7 +344,7 @@ export default function Home() {
 
                     {!loading && !hasOrders ? (
                       <tr>
-                        <td className="py-4 text-sm text-[#708175]" colSpan={6}>
+                        <td className="py-4 text-sm text-[#708175]" colSpan={8}>
                           No orders found.
                         </td>
                       </tr>
@@ -331,6 +357,8 @@ export default function Home() {
                           <td className="py-3 pr-3">{order.itemName}</td>
                           <td className="py-3 pr-3">{order.quantity}</td>
                           <td className="py-3 pr-3">{order.status}</td>
+                          <td className="py-3 pr-3">{order.sagaState ?? "-"}</td>
+                          <td className="py-3 pr-3 text-[#607064]">{order.failureReason ?? "-"}</td>
                           <td className="py-3 pr-3">{new Date(order.createdAt).toLocaleString()}</td>
                           <td className="py-3 pr-3">
                             <div className="flex items-center gap-2">

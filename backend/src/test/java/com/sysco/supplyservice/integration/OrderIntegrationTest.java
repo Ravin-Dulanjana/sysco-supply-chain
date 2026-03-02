@@ -25,8 +25,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@EmbeddedKafka(partitions = 1, topics = {"orders-topic"})
-@DirtiesContext
+@EmbeddedKafka(partitions = 1, topics = {"orders-topic", "order-saga-topic"})
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class OrderIntegrationTest {
 
     @Autowired
@@ -61,6 +61,45 @@ class OrderIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.itemName").value("Gear X"))
                 .andExpect(jsonPath("$.createdAt").exists());
+    }
+
+    @Test
+    void createOrder_completesSagaAndMovesOrderToProcessing() throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"itemName\":\"Saga Widget\",\"quantity\":3}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long id = objectMapper.readValue(
+                result.getResponse().getContentAsString(), OrderResponse.class).getId();
+
+        awaitOrderState(id, "PROCESSING", "COMPLETED");
+
+        mockMvc.perform(get("/api/orders/" + id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PROCESSING"))
+                .andExpect(jsonPath("$.sagaState").value("COMPLETED"));
+    }
+
+    @Test
+    void createOrder_withPaymentFailure_compensatesSaga() throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"itemName\":\"FAIL_PAYMENT Demo\",\"quantity\":2}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long id = objectMapper.readValue(
+                result.getResponse().getContentAsString(), OrderResponse.class).getId();
+
+        awaitOrderState(id, "CANCELLED", "COMPENSATED");
+
+        mockMvc.perform(get("/api/orders/" + id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.sagaState").value("COMPENSATED"))
+                .andExpect(jsonPath("$.failureReason").value("Payment authorization failed"));
     }
 
     @Test
@@ -121,5 +160,27 @@ class OrderIntegrationTest {
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
+    }
+
+    private void awaitOrderState(Long orderId, String expectedStatus, String expectedSagaState) throws Exception {
+        long deadline = System.currentTimeMillis() + 10000;
+        while (System.currentTimeMillis() < deadline) {
+            OrderResponse order = objectMapper.readValue(
+                    mockMvc.perform(get("/api/orders/" + orderId))
+                            .andExpect(status().isOk())
+                            .andReturn()
+                            .getResponse()
+                            .getContentAsString(),
+                    OrderResponse.class
+            );
+
+            if (expectedStatus.equals(order.getStatus()) && expectedSagaState.equals(order.getSagaState())) {
+                return;
+            }
+
+            Thread.sleep(200);
+        }
+
+        throw new AssertionError("Timed out waiting for order state " + expectedStatus + "/" + expectedSagaState);
     }
 }

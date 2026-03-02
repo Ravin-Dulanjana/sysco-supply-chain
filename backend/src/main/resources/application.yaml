@@ -6,6 +6,10 @@ app:
     enabled: ${APP_SECURITY_ENABLED:true}
   jwt:
     secret: ${APP_JWT_SECRET:this-is-a-very-long-dev-secret-key-for-hs256-auth-token-signing}
+  saga:
+    topic: ${APP_SAGA_TOPIC:order-saga-topic}
+    inventory-failure-threshold: ${APP_SAGA_INVENTORY_FAILURE_THRESHOLD:100}
+    payment-failure-trigger: ${APP_SAGA_PAYMENT_FAILURE_TRIGGER:FAIL_PAYMENT}
 
 spring:
   application:
@@ -54,7 +58,7 @@ info:
   app:
     name: Micro Supply Chain Order Processing System
     version: 1.0.0
-    description: RESTful microservice for supply chain order management with Kafka event streaming
+    description: RESTful microservice for supply chain order management with Kafka-based saga orchestration
 
 # ── Resilience4j ──────────────────────────────────────────────────────────────
 # Retry config for Kafka publish: up to 3 attempts, 500 ms between retries

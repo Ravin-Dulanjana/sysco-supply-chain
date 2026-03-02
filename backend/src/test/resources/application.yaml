@@ -4,6 +4,10 @@ app:
     enabled: false
   jwt:
     secret: this-is-a-very-long-dev-secret-key-for-hs256-auth-token-signing
+  saga:
+    topic: order-saga-topic
+    inventory-failure-threshold: 100
+    payment-failure-trigger: FAIL_PAYMENT
 
 spring:
   application:

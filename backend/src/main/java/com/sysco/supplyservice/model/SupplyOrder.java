@@ -30,6 +30,15 @@ public class SupplyOrder {
     @Column(nullable = false)
     private String status; // PENDING | PROCESSING | SHIPPED
 
+    @Column(name = "saga_id")
+    private String sagaId;
+
+    @Column(name = "saga_state")
+    private String sagaState;
+
+    @Column(name = "failure_reason")
+    private String failureReason;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;

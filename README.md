@@ -6,7 +6,7 @@ Backend-focused microservices demo with a minimal frontend.
 
 - `order-service` (`/backend`)
   - Port inside Docker: `8080`
-  - Responsibilities: order APIs, PostgreSQL persistence, Kafka producer/consumer, retry, actuator
+  - Responsibilities: order APIs, PostgreSQL persistence, Kafka producer/consumer, orchestration-style saga, retry, actuator
 - `auth-service` (`/auth-service`)
   - Port inside Docker: `8081`
   - Responsibilities: simple login and JWT issuance
@@ -27,6 +27,7 @@ Backend-focused microservices demo with a minimal frontend.
 | Backend | Spring Boot 3.4.5 (Java 21) |
 | Database | PostgreSQL |
 | Messaging | Apache Kafka + Zookeeper |
+| Workflow Pattern | Orchestrated Saga |
 | Auth | JWT (JJWT) |
 | Gateway | Nginx |
 | Frontend | Next.js (TypeScript) |
@@ -56,6 +57,26 @@ Demo credentials:
 - Password: `admin123`
 
 ## API Usage Through Gateway
+
+## Saga Flow
+
+The order service now includes a lightweight orchestration-style saga:
+
+1. `ORDER_CREATED`
+2. orchestrator issues `RESERVE_INVENTORY`
+3. inventory participant emits `INVENTORY_RESERVED` or `INVENTORY_REJECTED`
+4. orchestrator issues `REQUEST_PAYMENT`
+5. payment participant emits `PAYMENT_COMPLETED` or `PAYMENT_FAILED`
+6. on payment failure, orchestrator issues `RELEASE_INVENTORY`
+7. inventory participant emits `INVENTORY_RELEASED`
+
+Order state is exposed through:
+- `status`: business status such as `PENDING`, `PROCESSING`, `CANCELLED`, `SHIPPED`
+- `sagaState`: workflow state such as `STARTED`, `COMPLETED`, `FAILED`, `COMPENSATED`
+
+Demo triggers:
+- Inventory failure: create an order with `quantity > 100`
+- Payment failure with compensation: include `FAIL_PAYMENT` in the item name
 
 ### Login
 

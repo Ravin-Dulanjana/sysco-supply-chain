@@ -1,0 +1,13 @@
+package com.sysco.supplyservice.saga;
+
+public enum SagaEventType {
+    ORDER_CREATED,
+    RESERVE_INVENTORY,
+    INVENTORY_RESERVED,
+    INVENTORY_REJECTED,
+    REQUEST_PAYMENT,
+    PAYMENT_COMPLETED,
+    PAYMENT_FAILED,
+    RELEASE_INVENTORY,
+    INVENTORY_RELEASED
+}

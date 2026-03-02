@@ -5,14 +5,17 @@ import com.sysco.supplyservice.dto.OrderResponse;
 import com.sysco.supplyservice.exception.OrderNotFoundException;
 import com.sysco.supplyservice.model.SupplyOrder;
 import com.sysco.supplyservice.repository.OrderRepository;
-import io.github.resilience4j.retry.annotation.Retry;
+import com.sysco.supplyservice.saga.OrderEventPublisher;
+import com.sysco.supplyservice.saga.SagaEventType;
+import com.sysco.supplyservice.saga.SagaMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.kafka.core.KafkaOperations;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Core business logic for order management.
@@ -27,17 +30,16 @@ import java.util.Set;
 public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
-    private static final String ORDERS_TOPIC = "orders-topic";
 
     // Valid statuses for validation
     private static final Set<String> VALID_STATUSES = Set.of("PENDING", "PROCESSING", "SHIPPED", "CANCELLED");
 
     private final OrderRepository orderRepository;
-    private final KafkaOperations<String, String> kafkaTemplate;
+    private final OrderEventPublisher eventPublisher;
 
-    public OrderService(OrderRepository orderRepository, KafkaOperations<String, String> kafkaTemplate) {
+    public OrderService(OrderRepository orderRepository, OrderEventPublisher eventPublisher) {
         this.orderRepository = orderRepository;
-        this.kafkaTemplate = kafkaTemplate;
+        this.eventPublisher = eventPublisher;
     }
 
     // ── Create a new order ─────────────────────────────────────────────────
@@ -48,11 +50,15 @@ public class OrderService {
         order.setItemName(request.getItemName());
         order.setQuantity(request.getQuantity());
         order.setStatus("PENDING");
+        order.setSagaId(UUID.randomUUID().toString());
+        order.setSagaState("STARTED");
+        order.setFailureReason(null);
 
         SupplyOrder saved = orderRepository.save(order);
         log.debug("Order persisted to DB: id={}", saved.getId());
 
         publishOrderEvent(saved);
+        publishSagaStarted(saved);
         return toResponse(saved);
     }
 
@@ -100,25 +106,31 @@ public class OrderService {
 
     // ── Kafka publish with Resilience4j @Retry ─────────────────────────────
     // Retried up to 3 times (500 ms wait) if Kafka is temporarily unavailable.
-    @Retry(name = "kafkaPublish", fallbackMethod = "publishFallback")
     public void publishOrderEvent(SupplyOrder order) {
         String message = String.format("ORDER_PLACED id=%d item='%s' qty=%d",
                 order.getId(), order.getItemName(), order.getQuantity());
-        log.info("Publishing to Kafka [{}]: {}", ORDERS_TOPIC, message);
-        kafkaTemplate.send(ORDERS_TOPIC, message);
+        eventPublisher.publishOperationalEvent(order.getId(), message);
     }
 
-    @Retry(name = "kafkaPublish", fallbackMethod = "publishFallback")
     public void publishStatusEvent(SupplyOrder order) {
         String message = String.format("ORDER_STATUS_UPDATE id=%d status=%s", order.getId(), order.getStatus());
-        log.info("Publishing to Kafka [{}]: {}", ORDERS_TOPIC, message);
-        kafkaTemplate.send(ORDERS_TOPIC, message);
+        eventPublisher.publishOperationalEvent(order.getId(), message);
     }
 
-    // ── Fallback: all Kafka retries exhausted ─────────────────────────────
+    public void publishSagaStarted(SupplyOrder order) {
+        eventPublisher.publishSagaEvent(new SagaMessage(
+                SagaEventType.ORDER_CREATED,
+                order.getSagaId(),
+                order.getId(),
+                order.getItemName(),
+                order.getQuantity(),
+                null,
+                LocalDateTime.now()
+        ));
+    }
+
     public void publishFallback(SupplyOrder order, Exception ex) {
-        log.error("Kafka publish FAILED after all retries — order id={}, error: {}", order.getId(), ex.getMessage());
-        // Production: write to dead-letter table, trigger PagerDuty alert, etc.
+        log.error("Legacy fallback invoked — order id={}, error: {}", order.getId(), ex.getMessage());
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
@@ -133,6 +145,9 @@ public class OrderService {
                 order.getItemName(),
                 order.getQuantity(),
                 order.getStatus(),
+                order.getSagaId(),
+                order.getSagaState(),
+                order.getFailureReason(),
                 order.getCreatedAt(),
                 order.getUpdatedAt()
         );

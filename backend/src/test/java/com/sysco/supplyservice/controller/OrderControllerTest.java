@@ -50,7 +50,8 @@ class OrderControllerTest {
     private ObjectMapper objectMapper;
 
     private OrderResponse sample() {
-        return new OrderResponse(1L, "Widget A", 10, "PENDING", LocalDateTime.now(), LocalDateTime.now());
+        return new OrderResponse(1L, "Widget A", 10, "PENDING",
+                "saga-1", "STARTED", null, LocalDateTime.now(), LocalDateTime.now());
     }
 
     // ── POST /api/orders ───────────────────────────────────────────────────
@@ -134,7 +135,8 @@ class OrderControllerTest {
 
     @Test
     void updateStatus_returns200WithNewStatus() throws Exception {
-        OrderResponse updated = new OrderResponse(1L, "Widget A", 10, "SHIPPED", LocalDateTime.now(), LocalDateTime.now());
+        OrderResponse updated = new OrderResponse(1L, "Widget A", 10, "SHIPPED",
+                "saga-1", "COMPLETED", null, LocalDateTime.now(), LocalDateTime.now());
         when(orderService.updateOrderStatus(eq(1L), eq("SHIPPED"))).thenReturn(updated);
 
         mockMvc.perform(patch("/api/orders/1/status")

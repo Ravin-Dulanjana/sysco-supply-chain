@@ -6,7 +6,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 
 /**
- * Kafka consumer — listens to the "orders-topic" and simulates warehouse processing.
+ * Kafka consumer — listens to the operational "orders-topic".
  *
  * Uses SLF4J logger instead of System.out.println so messages:
  *  - Include timestamps and log levels (INFO, ERROR, etc.)
@@ -21,9 +21,9 @@ public class OrderConsumer {
     @KafkaListener(topics = "orders-topic", groupId = "warehouse-group")
     public void consumeOrder(String message) {
         log.info("================================================");
-        log.info("WAREHOUSE: Received Kafka message");
+        log.info("WAREHOUSE: Received operational Kafka message");
         log.info("Message: {}", message);
-        log.info("Action: Preparing item for shipment...");
+        log.info("Action: Updating downstream operational view...");
         log.info("================================================");
     }
 }

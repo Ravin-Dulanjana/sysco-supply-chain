@@ -5,13 +5,13 @@ import com.sysco.supplyservice.dto.OrderResponse;
 import com.sysco.supplyservice.exception.OrderNotFoundException;
 import com.sysco.supplyservice.model.SupplyOrder;
 import com.sysco.supplyservice.repository.OrderRepository;
+import com.sysco.supplyservice.saga.OrderEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.kafka.core.KafkaOperations;
 
 import java.util.List;
 import java.util.Optional;
@@ -34,7 +34,7 @@ class OrderServiceTest {
     private OrderRepository orderRepository;
 
     @Mock
-    private KafkaOperations<String, String> kafkaTemplate;
+    private OrderEventPublisher eventPublisher;
 
     @InjectMocks
     private OrderService orderService;
@@ -75,8 +75,8 @@ class OrderServiceTest {
 
         orderService.placeOrder(req);
 
-        // publishOrderEvent is called directly (no proxy), so Kafka send is invoked
-        verify(kafkaTemplate).send(eq("orders-topic"), anyString());
+        verify(eventPublisher).publishOperationalEvent(eq(1L), contains("ORDER_PLACED"));
+        verify(eventPublisher).publishSagaEvent(any());
     }
 
     // ── getOrderById ──────────────────────────────────────────────────────
