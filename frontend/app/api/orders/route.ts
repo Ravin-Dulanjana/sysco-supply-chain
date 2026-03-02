@@ -38,11 +38,13 @@ export async function POST(request: NextRequest) {
   try {
     const payload = await request.text();
     const authHeader = request.headers.get("authorization");
+    const idempotencyKey = request.headers.get("idempotency-key");
     const response = await fetch(`${API_GATEWAY_URL}/api/orders`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(authHeader ? { Authorization: authHeader } : {}),
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body: payload,
     });

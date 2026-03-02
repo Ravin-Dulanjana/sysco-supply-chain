@@ -9,3 +9,12 @@ app:
     demo-user:
       username: ${APP_DEMO_USER_USERNAME:admin}
       password: ${APP_DEMO_USER_PASSWORD:admin123}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      show-details: always

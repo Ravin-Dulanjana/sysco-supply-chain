@@ -1,4 +1,4 @@
-package com.sysco.supplyservice.saga;
+package com.sysco.paymentservice.saga;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,30 +15,30 @@ public class PaymentSagaParticipant {
     private static final Logger log = LoggerFactory.getLogger(PaymentSagaParticipant.class);
 
     private final SagaMessageSerializer serializer;
-    private final OrderEventPublisher eventPublisher;
+    private final SagaEventPublisher publisher;
     private final String paymentFailureTrigger;
 
     public PaymentSagaParticipant(
             SagaMessageSerializer serializer,
-            OrderEventPublisher eventPublisher,
+            SagaEventPublisher publisher,
             @Value("${app.saga.payment-failure-trigger:FAIL_PAYMENT}") String paymentFailureTrigger) {
         this.serializer = serializer;
-        this.eventPublisher = eventPublisher;
+        this.publisher = publisher;
         this.paymentFailureTrigger = paymentFailureTrigger.toLowerCase(Locale.ROOT);
     }
 
-    @KafkaListener(topics = "${app.saga.topic:order-saga-topic}", groupId = "payment-saga-participant-group")
+    @KafkaListener(topics = "${app.saga.topic:order-saga-topic}", groupId = "payment-service-group")
     public void onSagaMessage(String rawMessage) {
         SagaMessage message = serializer.fromJson(rawMessage);
         if (message.eventType() != SagaEventType.REQUEST_PAYMENT) {
-            log.debug("Payment participant ignoring event={}", message.eventType());
+            log.debug("Payment service ignoring event={}", message.eventType());
             return;
         }
 
         String itemName = message.itemName() == null ? "" : message.itemName().toLowerCase(Locale.ROOT);
         if (itemName.contains(paymentFailureTrigger)) {
             log.warn("Payment failed for orderId={} trigger={}", message.orderId(), paymentFailureTrigger);
-            eventPublisher.publishSagaEvent(new SagaMessage(
+            publisher.publish(new SagaMessage(
                     SagaEventType.PAYMENT_FAILED,
                     message.sagaId(),
                     message.orderId(),
@@ -51,7 +51,7 @@ public class PaymentSagaParticipant {
         }
 
         log.info("Payment completed for orderId={}", message.orderId());
-        eventPublisher.publishSagaEvent(new SagaMessage(
+        publisher.publish(new SagaMessage(
                 SagaEventType.PAYMENT_COMPLETED,
                 message.sagaId(),
                 message.orderId(),

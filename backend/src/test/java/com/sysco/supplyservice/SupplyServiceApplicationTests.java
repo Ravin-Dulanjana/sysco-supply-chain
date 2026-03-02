@@ -1,17 +1,11 @@
 package com.sysco.supplyservice;
 
+import com.sysco.supplyservice.support.AbstractIntegrationContainers;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.kafka.test.context.EmbeddedKafka;
-import org.springframework.test.annotation.DirtiesContext;
 
-/**
- * Smoke test — verifies the full Spring application context starts without errors.
- */
 @SpringBootTest
-@EmbeddedKafka(partitions = 1, topics = {"orders-topic", "order-saga-topic"})
-@DirtiesContext
-class SupplyServiceApplicationTests {
+class SupplyServiceApplicationTests extends AbstractIntegrationContainers {
 
     @Test
     void contextLoads() {

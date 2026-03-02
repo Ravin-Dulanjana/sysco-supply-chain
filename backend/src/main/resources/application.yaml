@@ -10,6 +10,8 @@ app:
     topic: ${APP_SAGA_TOPIC:order-saga-topic}
     inventory-failure-threshold: ${APP_SAGA_INVENTORY_FAILURE_THRESHOLD:100}
     payment-failure-trigger: ${APP_SAGA_PAYMENT_FAILURE_TRIGGER:FAIL_PAYMENT}
+  outbox:
+    relay-delay-ms: ${APP_OUTBOX_RELAY_DELAY_MS:250}
 
 spring:
   application:
@@ -46,7 +48,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, metrics
+        include: health, info, metrics, prometheus
   endpoint:
     health:
       show-details: always  # Shows DB + Kafka component health details

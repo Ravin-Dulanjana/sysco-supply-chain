@@ -2,6 +2,7 @@ package com.sysco.supplyservice.controller;
 
 import com.sysco.supplyservice.dto.OrderRequest;
 import com.sysco.supplyservice.dto.OrderResponse;
+import com.sysco.supplyservice.service.CreateOrderResult;
 import com.sysco.supplyservice.service.OrderService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -37,9 +38,13 @@ public class OrderController {
 
     // ── POST /api/orders ───────────────────────────────────────────────────
     @PostMapping
-    public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody OrderRequest request) {
+    public ResponseEntity<OrderResponse> createOrder(
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody OrderRequest request) {
         log.info("POST /api/orders — item='{}'", request.getItemName());
-        return ResponseEntity.status(HttpStatus.CREATED).body(orderService.placeOrder(request));
+        CreateOrderResult result = orderService.placeOrder(request, idempotencyKey);
+        HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
+        return ResponseEntity.status(status).body(result.order());
     }
 
     // ── GET /api/orders[?status=PENDING] ──────────────────────────────────

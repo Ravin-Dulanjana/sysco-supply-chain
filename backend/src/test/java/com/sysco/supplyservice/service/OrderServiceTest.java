@@ -3,9 +3,11 @@ package com.sysco.supplyservice.service;
 import com.sysco.supplyservice.dto.OrderRequest;
 import com.sysco.supplyservice.dto.OrderResponse;
 import com.sysco.supplyservice.exception.OrderNotFoundException;
+import com.sysco.supplyservice.idempotency.IdempotencyRecord;
+import com.sysco.supplyservice.idempotency.IdempotencyRecordRepository;
 import com.sysco.supplyservice.model.SupplyOrder;
+import com.sysco.supplyservice.outbox.OutboxService;
 import com.sysco.supplyservice.repository.OrderRepository;
-import com.sysco.supplyservice.saga.OrderEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,7 +36,10 @@ class OrderServiceTest {
     private OrderRepository orderRepository;
 
     @Mock
-    private OrderEventPublisher eventPublisher;
+    private IdempotencyRecordRepository idempotencyRecordRepository;
+
+    @Mock
+    private OutboxService outboxService;
 
     @InjectMocks
     private OrderService orderService;
@@ -59,10 +64,12 @@ class OrderServiceTest {
         req.setQuantity(10);
         when(orderRepository.save(any())).thenReturn(savedOrder);
 
-        OrderResponse resp = orderService.placeOrder(req);
+        CreateOrderResult result = orderService.placeOrder(req, null);
+        OrderResponse resp = result.order();
 
         assertThat(resp.getId()).isEqualTo(1L);
         assertThat(resp.getStatus()).isEqualTo("PENDING");
+        assertThat(result.created()).isTrue();
         verify(orderRepository).save(any(SupplyOrder.class));
     }
 
@@ -73,10 +80,50 @@ class OrderServiceTest {
         req.setQuantity(10);
         when(orderRepository.save(any())).thenReturn(savedOrder);
 
-        orderService.placeOrder(req);
+        orderService.placeOrder(req, null);
 
-        verify(eventPublisher).publishOperationalEvent(eq(1L), contains("ORDER_PLACED"));
-        verify(eventPublisher).publishSagaEvent(any());
+        verify(outboxService).enqueueOperationalEvent(eq(1L), eq("ORDER_PLACED"), contains("ORDER_PLACED"));
+        verify(outboxService).enqueueSagaEvent(any());
+    }
+
+    @Test
+    void placeOrder_returnsExistingOrderForMatchingIdempotencyKey() {
+        OrderRequest req = new OrderRequest();
+        req.setItemName("Widget A");
+        req.setQuantity(10);
+
+        IdempotencyRecord record = new IdempotencyRecord();
+        record.setIdempotencyKey("idem-1");
+        record.setRequestHash("de4943cc997c9a52ff3f2405d2f3af1bb61afcc66869792776b5b107024201c9");
+        record.setOrderId(1L);
+
+        when(idempotencyRecordRepository.findByIdempotencyKey("idem-1")).thenReturn(Optional.of(record));
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(savedOrder));
+
+        CreateOrderResult result = orderService.placeOrder(req, "idem-1");
+
+        assertThat(result.created()).isFalse();
+        assertThat(result.order().getId()).isEqualTo(1L);
+        verify(orderRepository, never()).save(any(SupplyOrder.class));
+        verify(outboxService, never()).enqueueSagaEvent(any());
+    }
+
+    @Test
+    void placeOrder_throwsWhenIdempotencyKeyReusedWithDifferentPayload() {
+        OrderRequest req = new OrderRequest();
+        req.setItemName("Other Widget");
+        req.setQuantity(10);
+
+        IdempotencyRecord record = new IdempotencyRecord();
+        record.setIdempotencyKey("idem-1");
+        record.setRequestHash("de4943cc997c9a52ff3f2405d2f3af1bb61afcc66869792776b5b107024201c9");
+        record.setOrderId(1L);
+
+        when(idempotencyRecordRepository.findByIdempotencyKey("idem-1")).thenReturn(Optional.of(record));
+
+        assertThatThrownBy(() -> orderService.placeOrder(req, "idem-1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("different request payload");
     }
 
     // ── getOrderById ──────────────────────────────────────────────────────

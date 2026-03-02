@@ -142,11 +142,13 @@ export default function Home() {
     setSubmitting(true);
     setError(null);
     try {
+      const idempotencyKey = crypto.randomUUID();
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
+          "Idempotency-Key": idempotencyKey,
         },
         body: JSON.stringify({ itemName: itemName.trim(), quantity: parsedQuantity }),
       });

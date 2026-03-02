@@ -66,6 +66,30 @@ services:
       kafka:
         condition: service_healthy
 
+  inventory-service:
+    build:
+      context: ./inventory-service
+    environment:
+      SERVER_PORT: 8083
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      APP_SAGA_TOPIC: order-saga-topic
+      APP_SAGA_INVENTORY_FAILURE_THRESHOLD: 100
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  payment-service:
+    build:
+      context: ./payment-service
+    environment:
+      SERVER_PORT: 8084
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      APP_SAGA_TOPIC: order-saga-topic
+      APP_SAGA_PAYMENT_FAILURE_TRIGGER: FAIL_PAYMENT
+    depends_on:
+      kafka:
+        condition: service_healthy
+
   api-gateway:
     image: nginx:1.27-alpine
     ports:
@@ -75,6 +99,32 @@ services:
     depends_on:
       - auth-service
       - order-service
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - auth-service
+      - order-service
+      - inventory-service
+      - payment-service
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    ports:
+      - "3001:3000"
 
   frontend:
     build:

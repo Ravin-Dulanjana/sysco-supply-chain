@@ -1,11 +1,13 @@
 package com.sysco.supplyservice.saga;
 
 import com.sysco.supplyservice.model.SupplyOrder;
+import com.sysco.supplyservice.outbox.OutboxService;
 import com.sysco.supplyservice.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class OrderSagaOrchestrator {
@@ -14,18 +16,19 @@ public class OrderSagaOrchestrator {
 
     private final OrderRepository orderRepository;
     private final SagaMessageSerializer serializer;
-    private final OrderEventPublisher eventPublisher;
+    private final OutboxService outboxService;
 
     public OrderSagaOrchestrator(
             OrderRepository orderRepository,
             SagaMessageSerializer serializer,
-            OrderEventPublisher eventPublisher) {
+            OutboxService outboxService) {
         this.orderRepository = orderRepository;
         this.serializer = serializer;
-        this.eventPublisher = eventPublisher;
+        this.outboxService = outboxService;
     }
 
     @KafkaListener(topics = "${app.saga.topic:order-saga-topic}", groupId = "order-saga-orchestrator-group")
+    @Transactional
     public void onSagaMessage(String rawMessage) {
         SagaMessage message = serializer.fromJson(rawMessage);
         log.info("SAGA orchestrator received event={} sagaId={} orderId={}",
@@ -43,7 +46,7 @@ public class OrderSagaOrchestrator {
     }
 
     private void handleOrderCreated(SagaMessage message) {
-        eventPublisher.publishSagaEvent(copyWithType(message, SagaEventType.RESERVE_INVENTORY, null));
+        outboxService.enqueueSagaEvent(copyWithType(message, SagaEventType.RESERVE_INVENTORY, null));
     }
 
     private void handleInventoryReserved(SagaMessage message) {
@@ -51,7 +54,7 @@ public class OrderSagaOrchestrator {
             order.setSagaState("INVENTORY_RESERVED");
             order.setFailureReason(null);
         });
-        eventPublisher.publishSagaEvent(copyWithType(message, SagaEventType.REQUEST_PAYMENT, null));
+        outboxService.enqueueSagaEvent(copyWithType(message, SagaEventType.REQUEST_PAYMENT, null));
     }
 
     private void handleInventoryRejected(SagaMessage message) {
@@ -60,7 +63,7 @@ public class OrderSagaOrchestrator {
             current.setSagaState("FAILED");
             current.setFailureReason(message.reason());
         });
-        eventPublisher.publishOperationalEvent(order.getId(),
+        outboxService.enqueueOperationalEvent(order.getId(), "ORDER_CANCELLED",
                 "ORDER_CANCELLED id=%d sagaState=%s reason=%s".formatted(
                         order.getId(), order.getSagaState(), order.getFailureReason()));
     }
@@ -71,7 +74,7 @@ public class OrderSagaOrchestrator {
             current.setSagaState("COMPLETED");
             current.setFailureReason(null);
         });
-        eventPublisher.publishOperationalEvent(order.getId(),
+        outboxService.enqueueOperationalEvent(order.getId(), "ORDER_READY_FOR_FULFILLMENT",
                 "ORDER_READY_FOR_FULFILLMENT id=%d status=%s sagaState=%s".formatted(
                         order.getId(), order.getStatus(), order.getSagaState()));
     }
@@ -81,7 +84,7 @@ public class OrderSagaOrchestrator {
             order.setSagaState("COMPENSATING");
             order.setFailureReason(message.reason());
         });
-        eventPublisher.publishSagaEvent(copyWithType(message, SagaEventType.RELEASE_INVENTORY, message.reason()));
+        outboxService.enqueueSagaEvent(copyWithType(message, SagaEventType.RELEASE_INVENTORY, message.reason()));
     }
 
     private void handleInventoryReleased(SagaMessage message) {
@@ -90,7 +93,7 @@ public class OrderSagaOrchestrator {
             current.setSagaState("COMPENSATED");
             current.setFailureReason(message.reason());
         });
-        eventPublisher.publishOperationalEvent(order.getId(),
+        outboxService.enqueueOperationalEvent(order.getId(), "ORDER_COMPENSATED",
                 "ORDER_COMPENSATED id=%d sagaState=%s reason=%s".formatted(
                         order.getId(), order.getSagaState(), order.getFailureReason()));
     }

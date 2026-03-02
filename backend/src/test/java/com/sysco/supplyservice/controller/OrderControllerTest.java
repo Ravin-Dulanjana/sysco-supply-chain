@@ -6,6 +6,7 @@ import com.sysco.supplyservice.dto.OrderResponse;
 import com.sysco.supplyservice.exception.GlobalExceptionHandler;
 import com.sysco.supplyservice.exception.OrderNotFoundException;
 import com.sysco.supplyservice.security.JwtService;
+import com.sysco.supplyservice.service.CreateOrderResult;
 import com.sysco.supplyservice.service.OrderService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -58,18 +59,33 @@ class OrderControllerTest {
 
     @Test
     void createOrder_returns201WithBody() throws Exception {
-        when(orderService.placeOrder(any())).thenReturn(sample());
+        when(orderService.placeOrder(any(), eq("idem-1")))
+                .thenReturn(new CreateOrderResult(sample(), true));
 
         OrderRequest req = new OrderRequest();
         req.setItemName("Widget A");
         req.setQuantity(10);
 
         mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", "idem-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(1))
                 .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    void createOrder_returns200WhenIdempotencyKeyReplaysExistingOrder() throws Exception {
+        when(orderService.placeOrder(any(), eq("idem-1")))
+                .thenReturn(new CreateOrderResult(sample(), false));
+
+        mockMvc.perform(post("/api/orders")
+                        .header("Idempotency-Key", "idem-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"itemName\":\"Widget A\",\"quantity\":10}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1));
     }
 
     @Test
